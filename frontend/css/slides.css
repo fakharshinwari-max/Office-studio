@@ -1,0 +1,111 @@
+/* Phase 3 additions */
+
+/* Selection handles */
+.slide-object .handle {
+  position: absolute; width: 10px; height: 10px;
+  background: #fff; border: 1px solid var(--ppt-accent);
+  border-radius: 50%;
+  pointer-events: auto;
+}
+.slide-object .handle.nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.slide-object .handle.ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.slide-object .handle.sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.slide-object .handle.se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+
+/* Chart object */
+.slide-object.chart canvas { display: block; }
+
+/* Table object */
+.slide-object.table table { font-family: var(--font-doc); }
+
+/* Section header in the thumbnail list */
+.slide-section {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 6px 4px 2px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+/* Presenter overlay */
+.presenter-overlay {
+  position: fixed; inset: 0; background: #000; color: #fff;
+  z-index: 5000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.presenter-overlay .presenter-slide {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.presenter-overlay .presenter-slide > * {
+  position: absolute;
+}
+.presenter-overlay .presenter-tools {
+  position: absolute; bottom: 20px; right: 20px;
+  display: flex; gap: 6px;
+}
+.presenter-overlay .presenter-tools button {
+  color: #fff; background: rgba(255,255,255,.15);
+  padding: 8px 14px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.2);
+}
+.presenter-overlay .presenter-tools button:hover { background: rgba(255,255,255,.25); }
+
+.presenter-view {
+  position: absolute; inset: 0;
+  display: grid; grid-template-columns: 1fr 360px;
+  background: #101010;
+  pointer-events: auto;
+}
+.presenter-view.hidden { display: none; }
+.pv-main { position: relative; display: flex; flex-direction: column; padding: 12px; }
+.pv-current { flex: 1; background: #fff; border-radius: 6px; position: relative; overflow: hidden; }
+.pv-controls { display: flex; gap: 6px; padding-top: 10px; }
+.pv-controls button { padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.15); }
+.pv-side { display: flex; flex-direction: column; padding: 12px; gap: 10px; }
+.pv-next { aspect-ratio: 16/9; background: #fff; border-radius: 4px; position: relative; overflow: hidden; }
+.pv-notes { flex: 1; background: #1c1c1c; color: #ddd; padding: 10px; border-radius: 4px; overflow-y: auto; font-size: 13px; line-height: 1.5; }
+.pv-timer { font-size: 28px; font-weight: 600; text-align: center; letter-spacing: 1px; }
+
+/* Slide sorter view */
+body.view-sorter .slide-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  border-right: none;
+}
+body.view-sorter .slides-main { grid-template-columns: 1fr; }
+body.view-sorter .slide-stage, body.view-sorter .format-panel, body.view-sorter .notes-pane { display: none; }
+
+/* Notes view */
+body.view-notes .slide-stage { display: none; }
+body.view-notes .notes-pane { flex: 1; }
+
+/* Designer cards */
+.designer-card:hover { border-color: var(--ppt-accent); }
+  _checkAccessibility() {
+    const issues = [];
+    for (let i = 0; i < this.slides.length; i++) {
+      const s = this.slides[i];
+      for (const o of s.objects) {
+        if (o.type === 'image' && !o.props?.altText) issues.push(`Slide ${i+1}: image ${o.id} missing alt text`);
+        if (o.type === 'text' && (o.props?.fontSize || 24) < 14) issues.push(`Slide ${i+1}: text ${o.id} font too small`);
+      }
+    }
+    const host = document.getElementById('dialogHost');
+    openDialog({
+      host, title: 'Accessibility Check',
+      content: issues.length
+        ? `<ul>${issues.map(x => `<li>${x}</li>`).join('')}</ul>`
+        : '<div style="color:green;">✓ No issues found.</div>',
+      buttons: [{ label: 'Close' }],
+    });
+  }

@@ -1,0 +1,162 @@
+/* =====================
+   Ribbon
+   ===================== */
+.ribbon {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  position: relative;
+  z-index: 5;
+}
+.ribbon-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  height: 32px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.ribbon-tab {
+  padding: 6px 12px 6px;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: var(--radius) var(--radius) 0 0;
+  white-space: nowrap;
+}
+.ribbon-tab:hover { background: var(--hover); }
+.ribbon-tab.active {
+  font-weight: 600;
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.ribbon-tab.file-tab { background: var(--accent); color: #fff; border-radius: var(--radius) var(--radius) 0 0; }
+.ribbon-tab.file-tab:hover { background: color-mix(in srgb, var(--accent), #000 10%); }
+.ribbon-tab .kt {
+  font-size: 10px; margin-left: 4px; color: var(--text-muted); opacity: .7;
+}
+
+.ribbon-groups {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 6px 8px 4px;
+  overflow-x: auto;
+  min-height: 82px;
+}
+.ribbon-group {
+  display: flex; flex-direction: column;
+  padding: 0 8px;
+  border-right: 1px solid var(--border);
+  min-width: fit-content;
+}
+.ribbon-group:last-child { border-right: none; }
+.ribbon-group-body {
+  display: flex; gap: 4px; align-items: center; flex: 1;
+}
+.ribbon-group-label {
+  font-size: 10px; color: var(--text-muted); text-align: center;
+  margin-top: 2px; display: flex; justify-content: center; align-items: center; gap: 4px;
+}
+.ribbon-group-label .launcher {
+  cursor: pointer; opacity: .55; font-size: 11px;
+}
+.ribbon-group-label .launcher:hover { opacity: 1; }
+
+.rb {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 4px 6px; min-width: 40px; min-height: 40px;
+  border-radius: var(--radius); font-size: 11px; gap: 2px; color: var(--text);
+}
+.rb:hover { background: var(--hover); }
+.rb:active { background: var(--surface-3); }
+.rb .ico { font-size: 18px; line-height: 1; }
+.rb .lbl { font-size: 11px; white-space: nowrap; }
+.rb.big { min-width: 56px; min-height: 56px; }
+.rb.big .ico { font-size: 24px; }
+
+.rb.toggle.on { background: var(--active); color: var(--accent); }
+.rb.disabled { opacity: .4; pointer-events: none; }
+
+.rb-split { position: relative; display: inline-flex; flex-direction: column; align-items: center; }
+.rb-split .caret { font-size: 8px; position: absolute; right: 2px; top: 4px; opacity: .7; }
+.rb-split > button { border-radius: var(--radius) var(--radius) 0 0; }
+
+.rb-dropdown { position: relative; display: inline-flex; flex-direction: column; align-items: center; }
+.rb-dropdown .caret { font-size: 8px; }
+
+.rb-input, .rb-select {
+  padding: 3px 6px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2); font-size: 12px;
+}
+.rb-input:focus, .rb-select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.rb-color { width: 26px; height: 26px; border-radius: var(--radius); border: 1px solid var(--border); padding: 0; cursor: pointer; }
+
+.rb-menu {
+  position: absolute; top: 100%; left: 0; min-width: 180px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-md); border-radius: var(--radius);
+  padding: 4px; z-index: 200;
+}
+.rb-menu .mi { padding: 6px 12px; border-radius: var(--radius); cursor: pointer; font-size: 12px; display: flex; justify-content: space-between; }
+.rb-menu .mi:hover { background: var(--hover); }
+.rb-menu .sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* Ribbon responsive: collapse labels */
+@media (max-width: 900px) {
+  .ribbon-group-body .rb .lbl { display: none; }
+  .ribbon-group-body .rb.big { min-width: 40px; min-height: 40px; }
+  .ribbon-group-body .rb.big .ico { font-size: 18px; }
+}
+@media (max-width: 640px) {
+  .ribbon-group-label { display: none; }
+  .ribbon-groups { min-height: 56px; }
+}
+
+/* Contextual tabs */
+.ribbon-tab.ctx-word { background: #2b579a; color: #fff; }
+.ribbon-tab.ctx-excel { background: #217346; color: #fff; }
+.ribbon-tab.ctx-ppt { background: #d24726; color: #fff; }
+
+/* Tell Me */
+.tellme-wrap {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  padding-right: 6px;
+}
+.tellme-input {
+  width: 220px; padding: 4px 10px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--surface-2); font-size: 12px;
+}
+.tellme-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+
+.tellme-results {
+  position: fixed; top: 74px; right: 20px; min-width: 260px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-md); border-radius: var(--radius-lg);
+  padding: 6px; z-index: 500; max-height: 60vh; overflow-y: auto;
+}
+.tellme-results .mi { padding: 8px 12px; border-radius: var(--radius); cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; }
+.tellme-results .mi:hover { background: var(--hover); }
+.tellme-results .mi small { color: var(--text-muted); }
+
+/* Key tips */
+.kt-badge {
+  position: absolute; background: #f7c34a; color: #1f1f1f;
+  padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 700;
+  z-index: 100; pointer-events: none;
+}
+
+/* Backstage */
+.backstage {
+  position: fixed; inset: 0; background: var(--accent); z-index: 900;
+  display: grid; grid-template-columns: 220px 1fr; color: #fff;
+}
+.backstage.hidden { display: none; }
+.bs-nav { padding: 16px 0; }
+.bs-nav-item { display: block; width: 100%; text-align: left; padding: 10px 20px; color: #fff; font-size: 14px; }
+.bs-nav-item:hover { background: rgba(255,255,255,.12); }
+.bs-nav-item.active { background: rgba(255,255,255,.2); font-weight: 600; }
+.bs-back { margin-top: 30px; font-size: 20px; }
+.bs-panel { background: var(--surface); color: var(--text); overflow: auto; padding: 30px 40px; }
+.bs-panel h2 { font-size: 22px; margin-top: 0; }

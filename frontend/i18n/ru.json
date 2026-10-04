@@ -1,0 +1,15 @@
+{
+  "app.title": "Office Studio",
+  "app.new": "Создать",
+  "writer": "Документ",
+  "sheets": "Таблица",
+  "slides": "Презентация",
+  "menu.file": "Файл",
+  "menu.home": "Главная",
+  "menu.insert": "Вставка",
+  "menu.review": "Рецензирование",
+  "menu.view": "Вид",
+  "action.save": "Сохранить",
+  "action.export": "Экспорт",
+  "action.share": "Поделиться"
+}

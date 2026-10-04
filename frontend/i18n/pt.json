@@ -1,0 +1,15 @@
+{
+  "app.title": "Office Studio",
+  "app.new": "Novo",
+  "writer": "Documento",
+  "sheets": "Planilhas",
+  "slides": "Apresentações",
+  "menu.file": "Arquivo",
+  "menu.home": "Página inicial",
+  "menu.insert": "Inserir",
+  "menu.review": "Revisão",
+  "menu.view": "Exibir",
+  "action.save": "Salvar",
+  "action.export": "Exportar",
+  "action.share": "Compartilhar"
+}

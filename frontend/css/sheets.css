@@ -1,0 +1,98 @@
+/* =====================
+   Sheets
+   ===================== */
+.sheets-app { --accent: var(--excel-accent); }
+.sheets-app .titlebar { background: var(--excel-accent); }
+.sheets-app .primary-btn { background: var(--excel-accent); }
+
+.formulabar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.name-box {
+  width: 120px; padding: 4px 8px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-2);
+  font-family: var(--font-mono); font-size: 12px;
+}
+.fx-btn { width: 28px; height: 26px; font-style: italic; font-weight: 600; color: var(--text-muted); }
+.formula-input {
+  flex: 1; padding: 4px 8px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-2);
+  font-family: var(--font-mono); font-size: 12px;
+}
+.name-box:focus, .formula-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+
+.sheet-area { flex: 1; overflow: hidden; position: relative; background: var(--surface); }
+.grid-scroll { position: absolute; inset: 0; overflow: auto; }
+.grid-scroll canvas { display: block; }
+
+.cell-editor {
+  position: absolute; border: 2px solid var(--accent);
+  background: #fff; font-family: var(--font-doc); font-size: 13px;
+  padding: 1px 4px; outline: none; z-index: 5;
+}
+
+.sheet-tabs {
+  display: flex; align-items: center; gap: 2px;
+  padding: 2px 6px; background: var(--surface-2);
+  border-top: 1px solid var(--border); min-height: 28px;
+  overflow-x: auto;
+}
+.sheet-tab {
+  padding: 4px 12px; border-radius: 3px 3px 0 0; font-size: 12px;
+  border: 1px solid transparent;
+}
+.sheet-tab.active { background: var(--surface); border-color: var(--border); font-weight: 600; color: var(--accent); }
+.tab-add { margin-left: 6px; font-size: 16px; width: 24px; height: 24px; }
+/* Formula autocomplete dropdown */
+.formula-autocomplete {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius);
+  padding: 4px;
+  z-index: 3000;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.formula-autocomplete .fn-item {
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-radius: 3px;
+}
+.formula-autocomplete .fn-item:hover,
+.formula-autocomplete .fn-item.active {
+  background: var(--hover);
+}
+
+/* Filter highlight */
+.filtered-out { display: none; }
+
+/* Freeze indicator in header */
+.sheet-tab .frozen-indicator { color: #217346; margin-left: 4px; }
+.formula-autocomplete {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius);
+  padding: 4px;
+  z-index: 3000;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.formula-autocomplete .fn-item {
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-radius: 3px;
+}
+.formula-autocomplete .fn-item:hover,
+.formula-autocomplete .fn-item.active {
+  background: var(--hover);
+}

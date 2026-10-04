@@ -1,0 +1,41 @@
+
+---
+
+## Phase completion report
+
+### Phase 0 — Foundation ✅
+- FastAPI app with auth (register/login/refresh), health probes, security headers, static mount.
+- SQLAlchemy models: `User`, `Document`, `Version`; SQLite default, Postgres-ready.
+- Frontend: shared CSS variables & 3 themes, ribbon framework with data-driven configs for all three apps, Backstage view, Tell Me search, key-tips, context menus, dialog framework, IndexedDB autosave, undo/redo command pattern, service worker + manifest for PWA/offline, i18n-ready CSS, RTL-safe (logical properties where used).
+
+### Phase 1 — Writer MVP ✅
+- Full contenteditable editor with page layout (Letter / A4, portrait / landscape, margins).
+- Home / Insert / Layout / View tabs and contextual **Table Design**.
+- Fonts, sizes, B/I/U/strike/sub/sup, colors, highlight, alignment, bullets/numbering, indent, styles (Normal, H1–H3, Quote, Code), line spacing.
+- Insert: table, image, link, page break, blank page, cover page, date/time, page number, symbol.
+- Find / Find and Replace dialogs with regex-free but robust text matching.
+- DOCX export (python-docx), DOCX import via python-docx, PDF export (reportlab).
+- Autosave (IndexedDB + backend), version snapshots, full undo/redo.
+- Status bar: page count, word & character count, zoom slider.
+
+### Partial / scaffolded (Phase 2+ hooks in place)
+- **Sheets**: virtual grid, formula engine with ~160 functions (SUM, IF, VLOOKUP, XLOOKUP, LET-ready, ARRAY formulas via spilling data), dependency graph, autosum, sort, remove duplicates, XLSX import/export with `_xlfn` prefixing and cached values, number-format engine (JS + Python mirror). Remaining Phase 2 work: charts, conditional formatting UI, data validation dialog, freeze/gridlines toggles, error indicator smart-tag.
+- **Slides**: canvas editor, thumbnails, drag/resize, shapes, text, images, themes, transitions/animations metadata, presenter mode, PPTX import/export, PDF export. Remaining Phase 3 work: slide master editing, real animation timeline pane, Morph, richer text editing, SmartArt, charts.
+- **Phase 4**: Track Changes, threaded comments, Pivot Tables, Solver, Power Query-style editor, Analysis ToolPak equivalents, Goal Seek — endpoints and UI buttons present with `Available in Phase 4` tooltips as required by the spec.
+- **Phase 5**: Copilot-style AI (backend proxy ready via `AI_API_KEY`), co-authoring, sensitivity labels, Immersive Reader, full i18n/RTL — stubs and env plumbing present.
+
+### Known limitations (explicit)
+- Python-in-cells (`=PY(...)`) is scaffolded, not active — Pyodide worker is Phase 5.
+- Charts on Sheets / Slides are declared but render as placeholders until Phase 4.
+- Slide master, notes master, handout master editing is not yet editable (PPTX masters import preserved).
+- Legacy `.doc/.xls/.ppt` import requires the LibreOffice sidecar (documented in `docker-compose.yml` as optional).
+- Formula engine passes ~160 Tier-1 functions; Tier-2/3 complete list lands in Phase 4.
+
+### Run it
+
+```bash
+python -m venv .venv
+# Windows:  .venv\Scripts\activate
+# macOS/Linux:  source .venv/bin/activate
+pip install -r backend/requirements.txt
+uvicorn backend.main:app --reload --port 8000

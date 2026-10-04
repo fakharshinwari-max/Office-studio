@@ -1,0 +1,15 @@
+/* Theme tokens consumed by ribbon + apps.
+   Actual color values live in base.css :root / [data-theme]. */
+
+.accent-word { background: #2b579a !important; }
+.accent-excel { background: #217346 !important; }
+.accent-ppt { background: #d24726 !important; }
+
+.ctx-header {
+  padding: 2px 10px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .5px; color: #fff; font-weight: 600;
+  border-radius: var(--radius); margin: 0 4px;
+}
+.ctx-header.word { background: #2b579a; }
+.ctx-header.excel { background: #217346; }
+.ctx-header.ppt { background: #d24726; }

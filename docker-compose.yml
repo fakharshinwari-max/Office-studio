@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-change-me}
+      - DATABASE_URL=sqlite:///./office_studio.db
+      - LIBREOFFICE_HOST=http://libreoffice:2003
+    volumes:
+      - ./uploads:/app/uploads
+      - ./office_studio.db:/app/office_studio.db
+    restart: unless-stopped
+
+  libreoffice:
+    image: linuxserver/libreoffice:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    ports:
+      - "2003:2003"
+    restart: unless-stopped
+    # To use the sidecar wrapper, mount the server.py under /app and start it:
+    #   docker exec libreoffice sh -c "pip install fastapi uvicorn python-multipart && uvicorn server:app --host 0.0.0.0 --port 2003"
+    # (See scripts/libreoffice_sidecar/server.py)

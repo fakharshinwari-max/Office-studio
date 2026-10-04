@@ -1,0 +1,15 @@
+{
+  "app.title": "Office Studio",
+  "app.new": "新建",
+  "writer": "文档",
+  "sheets": "表格",
+  "slides": "演示文稿",
+  "menu.file": "文件",
+  "menu.home": "开始",
+  "menu.insert": "插入",
+  "menu.review": "审阅",
+  "menu.view": "视图",
+  "action.save": "保存",
+  "action.export": "导出",
+  "action.share": "共享"
+}

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#2b579a" />
+<title>Office Studio</title>
+<link rel="manifest" href="/manifest.json" />
+<link rel="stylesheet" href="/css/base.css" />
+<link rel="stylesheet" href="/css/ribbon.css" />
+<link rel="stylesheet" href="/css/themes.css" />
+</head>
+<body class="hub">
+  <header class="hub-header">
+    <div class="hub-brand">
+      <div class="logo-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <h1>Office Studio</h1>
+    </div>
+    <nav class="hub-nav">
+      <button class="hub-tab active" data-view="home">Home</button>
+      <button class="hub-tab" data-view="recent">Recent</button>
+      <button class="hub-tab" data-view="shared">Shared</button>
+      <button class="hub-tab" data-view="trash">Trash</button>
+    </nav>
+    <div class="hub-user">
+      <input id="hubSearch" placeholder="Search files…" aria-label="Search files" />
+      <button id="themeToggle" class="icon-btn" title="Toggle theme">🌓</button>
+      <button id="loginBtn" class="primary-btn">Sign in</button>
+    </div>
+  </header>
+
+  <main class="hub-main">
+    <section class="hub-new">
+      <h2>New</h2>
+      <div class="new-grid">
+        <a class="new-card word" href="/writer.html">
+          <div class="new-icon">📝</div>
+          <div class="new-meta"><strong>Writer</strong><span>Blank document</span></div>
+        </a>
+        <a class="new-card sheets" href="/sheets.html">
+          <div class="new-icon">📊</div>
+          <div class="new-meta"><strong>Sheets</strong><span>Blank spreadsheet</span></div>
+        </a>
+        <a class="new-card slides" href="/slides.html">
+          <div class="new-icon">📽️</div>
+          <div class="new-meta"><strong>Slides</strong><span>Blank presentation</span></div>
+        </a>
+      </div>
+    </section>
+
+    <section class="hub-templates">
+      <h2>Start with a template</h2>
+      <div class="tpl-grid">
+        <button class="tpl-card" data-tpl="resume">📄 Resume</button>
+        <button class="tpl-card" data-tpl="invoice">🧾 Invoice</button>
+        <button class="tpl-card" data-tpl="report">📈 Report</button>
+        <button class="tpl-card" data-tpl="budget">💰 Budget</button>
+        <button class="tpl-card" data-tpl="pitch">🎯 Pitch Deck</button>
+        <button class="tpl-card" data-tpl="lesson">🎓 Lesson Plan</button>
+      </div>
+    </section>
+
+    <section class="hub-files">
+      <h2>Recent files</h2>
+      <div id="fileList" class="file-list">
+        <div class="empty-hint">No files yet — create your first document above.</div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/js/core/api.js"></script>
+  <script type="module">
+    import { api } from '/js/core/api.js';
+
+    const fileList = document.getElementById('fileList');
+    const searchInput = document.getElementById('hubSearch');
+
+    async function loadFiles() {
+      try {
+        const docs = await api.listDocs();
+        renderFiles(docs);
+      } catch (e) {
+        fileList.innerHTML = `<div class="empty-hint">Sign in to see your files. <button id="inlineLogin">Sign in</button></div>`;
+        document.getElementById('inlineLogin')?.addEventListener('click', () => openLogin());
+      }
+    }
+
+    function renderFiles(docs) {
+      if (!docs.length) {
+        fileList.innerHTML = `<div class="empty-hint">No files yet — create your first document above.</div>`;
+        return;
+      }
+      fileList.innerHTML = docs.map(d => `
+        <a class="file-card" href="/${d.kind === 'word' ? 'writer' : d.kind === 'sheets' ? 'sheets' : 'slides'}.html?id=${d.id}">
+          <div class="file-icon ${d.kind}">${d.kind === 'word' ? '📝' : d.kind === 'sheets' ? '📊' : '📽️'}</div>
+          <div class="file-meta">
+            <strong>${escapeHtml(d.name)}</strong>
+            <span>${new Date(d.updated_at).toLocaleString()}</span>
+          </div>
+        </a>
+      `).join('');
+    }
+
+    function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+    async function openLogin() {
+      const email = prompt('Email:'); if (!email) return;
+      const password = prompt('Password:'); if (!password) return;
+      const action = confirm('OK = Sign in, Cancel = Register');
+      try {
+        if (action) await api.login(email, password);
+        else await api.register(email, password);
+        location.reload();
+      } catch (e) {
+        alert('Auth failed: ' + e.message);
+      }
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', openLogin);
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase();
+      document.querySelectorAll('.file-card').forEach(c => {
+        c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme || 'light';
+      const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'hc' : 'light';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('theme', next);
+    });
+
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+
+    loadFiles();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
