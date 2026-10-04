@@ -1,107 +1,129 @@
-"""Real-time collaboration — WebSocket + Yjs-style ops relay."""
-from __future__ import annotations
-from typing import Any
-import asyncio
-import json
-from datetime import datetime
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+"""AI proxy — Writer/Sheets/Slides Copilot actions."""
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from ..auth import get_current_user, decode_token
-from ..database import get_db, SessionLocal
-from ..models import Document, User
-from ..config import get_settings
 
-router = APIRouter(prefix="/api/collab", tags=["collab"])
+from ..auth import get_current_user
+from ..config import get_settings
+from ..database import get_db
+from ..models import AIUsage, User
+from ..services.ai_provider import chat
+
+router = APIRouter(prefix="/api/ai", tags=["ai"])
 settings = get_settings()
 
 
-class Room:
-    def __init__(self):
-        self.clients: dict[str, WebSocket] = {}   # clientId -> ws
-        self.presence: dict[str, dict] = {}       # clientId -> {name, color, cursor}
-        self.docs: dict[int, dict] = {}           # docId -> latest snapshot (fallback)
-        self.lock = asyncio.Lock()
+class AIRequest(BaseModel):
+    app: str  # word | sheets | slides
+    action: str  # summarize | rewrite | translate | ...
+    context: str = ""  # selection / data user chose to send
+    options: dict | None = None  # extra params (tone, language, etc.)
 
-    async def join(self, doc_id: int, client_id: str, ws: WebSocket, who: dict):
-        async with self.lock:
-            self.clients[client_id] = ws
-            self.presence[client_id] = who
-        await self.broadcast(doc_id, {"type": "presence", "action": "join", "clientId": client_id, "who": who})
-
-    async def leave(self, doc_id: int, client_id: str):
-        async with self.lock:
-            self.clients.pop(client_id, None)
-            self.presence.pop(client_id, None)
-        await self.broadcast(doc_id, {"type": "presence", "action": "leave", "clientId": client_id})
-
-    async def broadcast(self, doc_id: int, msg: dict, skip: str | None = None):
-        dead = []
-        for cid, ws in list(self.clients.items()):
-            if cid == skip:
-                continue
-            try:
-                await ws.send_json(msg)
-            except Exception:
-                dead.append(cid)
-        for cid in dead:
-            self.clients.pop(cid, None)
-            self.presence.pop(cid, None)
+    @property
+    def normalized_options(self) -> dict:
+        return self.options or {}
 
 
-_room = Room()
+SYSTEM_PROMPTS = {
+    "word": "You are a writing assistant inside a word processor. Be concise and correct.",
+    "sheets": "You are a spreadsheet assistant. Return valid Excel formulas or plain tabular text.",
+    "slides": "You are a presentation assistant. Return clean bullet points and short titles.",
+}
 
 
-@router.websocket("/ws/{doc_id}")
-async def collab_ws(ws: WebSocket, doc_id: int):
-    await ws.accept()
+@router.get("/status")
+def ai_status():
+    configured = bool(settings.ai_api_key) or settings.ai_provider == "ollama"
+    return {
+        "enabled": settings.enable_ai,
+        "configured": configured,
+        "provider": settings.ai_provider if configured else "none",
+    }
 
-    # Auth via query param ?token=...
-    token = ws.query_params.get("token") or ""
-    try:
-        payload = decode_token(token)
-        email = payload.get("sub")
-    except Exception:
-        await ws.send_json({"type": "error", "message": "unauthorized"})
-        await ws.close()
-        return
 
-    db: Session = SessionLocal()
-    user = db.query(User).filter(User.email == email).first()
-    db.close()
-    if not user:
-        await ws.send_json({"type": "error", "message": "user not found"})
-        await ws.close()
-        return
+@router.post("/{app}/{action}")
+async def ai_action(
+    app: str,
+    action: str,
+    body: AIRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not settings.enable_ai:
+        raise HTTPException(503, "AI features are disabled on this server.")
 
-    # Every connection gets a random color
-    import random
-    colors = ["#2b579a", "#217346", "#d24726", "#f2c94c", "#6f42c1",
-              "#17a2b8", "#e91e63", "#009688", "#ff9800", "#795548"]
-    who = {"userId": user.id, "name": user.name or user.email,
-           "color": random.choice(colors)}
+    if app not in SYSTEM_PROMPTS:
+        raise HTTPException(400, f"Unknown app: {app}")
 
-    import uuid
-    client_id = str(uuid.uuid4())[:8]
-
-    await _room.join(doc_id, client_id, ws, who)
-    await ws.send_json({"type": "welcome", "clientId": client_id, "who": who,
-                        "peers": _room.presence})
+    prompt = _build_prompt(app, action, body.context, body.normalized_options)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPTS[app]},
+        {"role": "user", "content": prompt},
+    ]
 
     try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except Exception:
-                continue
-            msg["from"] = client_id
-            if msg.get("type") == "cursor":
-                _room.presence[client_id]["cursor"] = msg.get("cursor")
-            elif msg.get("type") == "op":
-                # Relay to others; server may also persist to Document.data
-                pass
-            await _room.broadcast(doc_id, msg, skip=client_id)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        await _room.leave(doc_id, client_id)
+        result = await chat(messages, max_tokens=800, temperature=0.7)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"AI request failed: {exc}") from exc
+
+    usage = AIUsage(
+        user_id=user.id,
+        app=app,
+        action=action,
+        tokens_in=result.get("tokens_in", 0),
+        tokens_out=result.get("tokens_out", 0),
+    )
+    db.add(usage)
+    db.commit()
+
+    return {
+        "text": result["text"],
+        "tokens_in": result.get("tokens_in", 0),
+        "tokens_out": result.get("tokens_out", 0),
+    }
+
+
+def _build_prompt(app: str, action: str, context: str, options: dict) -> str:
+    ctx = context[:8000]
+    if app == "word":
+        if action == "summarize":
+            return f"Summarize the following text in 3 sentences:\n\n{ctx}"
+        if action == "rewrite":
+            return f"Rewrite the following text to be clearer and more concise:\n\n{ctx}"
+        if action == "expand":
+            return f"Expand the following text with more detail:\n\n{ctx}"
+        if action == "tone":
+            return f"Rewrite the following text in a {options.get('tone', 'professional')} tone:\n\n{ctx}"
+        if action == "fix":
+            return f"Fix grammar and spelling in the following text. Return only the corrected text:\n\n{ctx}"
+        if action == "translate":
+            return f"Translate the following text to {options.get('to', 'Spanish')}. Return only the translation:\n\n{ctx}"
+        if action == "continue":
+            return f"Continue the following text naturally:\n\n{ctx}"
+        if action == "outline":
+            return f"Create an outline of headings for this topic:\n\n{ctx}"
+        if action == "table":
+            return f"Convert the following text into a markdown table:\n\n{ctx}"
+    if app == "sheets":
+        if action == "formula":
+            return f"Write an Excel formula for: {ctx}\nReply with only the formula starting with =."
+        if action == "explain":
+            return f"Explain in plain English what this Excel formula does:\n{ctx}"
+        if action == "clean":
+            return f"Suggest data-cleaning steps for this dataset. Reply as a bulleted list:\n{ctx}"
+        if action == "chart":
+            return f"Recommend a chart type for this data and explain why in 2 sentences:\n{ctx}"
+        if action == "insights":
+            return f"Analyze this data and give 3-5 key insights:\n{ctx}"
+    if app == "slides":
+        if action == "deck":
+            return f"Create a slide outline (title + 5-10 bullets per slide) for:\n\n{ctx}"
+        if action == "rewrite":
+            return f"Rewrite these bullet points to be shorter and punchier:\n\n{ctx}"
+        if action == "notes":
+            return f"Write speaker notes for these slides:\n\n{ctx}"
+        if action == "theme":
+            return f"Suggest a theme (colors + font) for a presentation about:\n\n{ctx}"
+    return f"Assist with this request: {action}\n\n{ctx}"

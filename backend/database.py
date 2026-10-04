@@ -1,6 +1,7 @@
 """Database setup."""
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
 from .config import get_settings
 
 settings = get_settings()

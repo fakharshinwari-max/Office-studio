@@ -1,6 +1,7 @@
 """Application configuration."""
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,13 +21,15 @@ class Settings(BaseSettings):
     max_uncompressed_mb: int = 500
 
     cors_origins: list[str] = [
-        "http://localhost:8000", "http://127.0.0.1:8000",
-        "http://localhost:5500", "http://127.0.0.1:5500",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
         "http://localhost:3000",
     ]
 
     # AI
-    ai_provider: str = "openai"          # openai | anthropic | ollama | none
+    ai_provider: str = "none"  # openai | anthropic | ollama | none
     ai_api_key: str | None = None
     ai_model: str = "gpt-4o-mini"
     ai_base_url: str | None = None
@@ -50,6 +53,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    s = Settings()
-    s.upload_dir.mkdir(parents=True, exist_ok=True)
-    return s
+    settings = Settings()
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    return settings

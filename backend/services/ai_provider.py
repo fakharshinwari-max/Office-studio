@@ -1,109 +1,101 @@
-"""AI provider abstraction — OpenAI, Anthropic, Ollama, or none.
+"""Admin console — user/role management, quotas, audit log, retention."""
+from datetime import datetime, timedelta
 
-The browser never sees the API key. Every AI request goes through this module.
-"""
-from __future__ import annotations
-from typing import Any
-import os
-import httpx
-from fastapi import HTTPException
-from ..config import get_settings
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-settings = get_settings()
+from ..auth import get_current_user
+from ..database import get_db
+from ..models import AIUsage, AuditEvent, Document, User
 
-
-async def chat(messages: list[dict], max_tokens: int = 800, temperature: float = 0.7) -> dict:
-    """Return { text, tokens_in, tokens_out }."""
-    provider = (settings.ai_provider or "none").lower()
-
-    if provider == "none" or not settings.ai_api_key and provider != "ollama":
-        raise HTTPException(503, "AI is not configured on this server. Set AI_PROVIDER and AI_API_KEY.")
-
-    if provider == "openai":
-        return await _openai(messages, max_tokens, temperature)
-    if provider == "anthropic":
-        return await _anthropic(messages, max_tokens, temperature)
-    if provider == "ollama":
-        return await _ollama(messages, max_tokens, temperature)
-    raise HTTPException(500, f"Unknown AI provider: {provider}")
+router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-async def _openai(messages, max_tokens, temperature):
-    base = settings.ai_base_url or "https://api.openai.com/v1"
-    async with httpx.AsyncClient(timeout=60) as c:
-        r = await c.post(
-            f"{base}/chat/completions",
-            headers={"Authorization": f"Bearer {settings.ai_api_key}"},
-            json={
-                "model": settings.ai_model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
-        )
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, f"OpenAI error: {r.text[:300]}")
-    j = r.json()
+def _require_admin(user: User) -> User:
+    if user.role != "admin":
+        raise HTTPException(403, "Admin only")
+    return user
+
+
+@router.get("/stats")
+def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_admin(user)
     return {
-        "text": j["choices"][0]["message"]["content"],
-        "tokens_in": j.get("usage", {}).get("prompt_tokens", 0),
-        "tokens_out": j.get("usage", {}).get("completion_tokens", 0),
+        "users": db.query(User).count(),
+        "documents": db.query(Document).count(),
+        "documents_by_kind": dict(db.query(Document.kind, func.count(Document.id)).group_by(Document.kind).all()),
+        "ai_calls_30d": db.query(AIUsage).filter(AIUsage.at >= datetime.utcnow() - timedelta(days=30)).count(),
+        "storage_mb_used": db.query(func.sum(User.used_mb)).scalar() or 0,
     }
 
 
-async def _anthropic(messages, max_tokens, temperature):
-    # Split system message
-    system = ""
-    rest = []
-    for m in messages:
-        if m["role"] == "system":
-            system += m["content"] + "\n"
-        else:
-            rest.append(m)
-
-    async with httpx.AsyncClient(timeout=60) as c:
-        r = await c.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": settings.ai_api_key or "",
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": settings.ai_model or "claude-3-5-sonnet-20241022",
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "system": system.strip() or None,
-                "messages": rest,
-            },
-        )
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, f"Anthropic error: {r.text[:300]}")
-    j = r.json()
-    return {
-        "text": j["content"][0]["text"],
-        "tokens_in": j.get("usage", {}).get("input_tokens", 0),
-        "tokens_out": j.get("usage", {}).get("output_tokens", 0),
-    }
+@router.get("/users")
+def list_users(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_admin(user)
+    users = db.query(User).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "role": u.role,
+            "quota_mb": u.quota_mb,
+            "used_mb": u.used_mb,
+            "locale": u.locale,
+            "is_active": u.is_active,
+            "last_login": u.last_login,
+            "created_at": u.created_at,
+        }
+        for u in users
+    ]
 
 
-async def _ollama(messages, max_tokens, temperature):
-    base = settings.ai_base_url or "http://localhost:11434"
-    async with httpx.AsyncClient(timeout=120) as c:
-        r = await c.post(
-            f"{base}/api/chat",
-            json={
-                "model": settings.ai_model or "llama3.1",
-                "messages": messages,
-                "stream": False,
-                "options": {"temperature": temperature},
-            },
-        )
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, f"Ollama error: {r.text[:300]}")
-    j = r.json()
-    return {
-        "text": j.get("message", {}).get("content", ""),
-        "tokens_in": j.get("prompt_eval_count", 0),
-        "tokens_out": j.get("eval_count", 0),
-    }
+class UserPatch(BaseModel):
+    role: str | None = None
+    quota_mb: int | None = None
+    is_active: bool | None = None
+
+
+@router.patch("/users/{user_id}")
+def patch_user(user_id: int, body: UserPatch, admin: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_admin(admin)
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if body.role is not None:
+        user.role = body.role
+    if body.quota_mb is not None:
+        user.quota_mb = body.quota_mb
+    if body.is_active is not None:
+        user.is_active = body.is_active
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/audit")
+def audit(limit: int = 200, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_admin(user)
+    rows = db.query(AuditEvent).order_by(AuditEvent.at.desc()).limit(limit).all()
+    return [
+        {
+            "id": r.id,
+            "userId": r.user_id,
+            "action": r.action,
+            "target": r.target,
+            "meta": r.meta,
+            "ip": r.ip,
+            "at": r.at,
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/purge-trash")
+def purge_trash(days: int = 30, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_admin(user)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    n = db.query(Document).filter(Document.deleted_at.is_not(None), Document.deleted_at < cutoff).delete()
+    db.commit()
+    return {"purged": n}

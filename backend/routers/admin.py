@@ -1,84 +1,122 @@
-"""Admin console — user/role management, quotas, audit log, retention."""
-from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+"""Real-time collaboration — WebSocket + Yjs-style ops relay."""
+from __future__ import annotations
+
+import asyncio
+import json
+import random
+import uuid
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from ..auth import get_current_user
-from ..database import get_db
-from ..models import User, Document, AuditEvent, AIUsage
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+from ..auth import decode_token
+from ..config import get_settings
+from ..database import SessionLocal
+from ..models import User
 
-
-def _require_admin(user: User) -> User:
-    if user.role != "admin":
-        raise HTTPException(403, "Admin only")
-    return user
+router = APIRouter(prefix="/api/collab", tags=["collab"])
+settings = get_settings()
 
 
-@router.get("/stats")
-def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_admin(user)
-    return {
-        "users": db.query(User).count(),
-        "documents": db.query(Document).count(),
-        "documents_by_kind": dict(
-            db.query(Document.kind, func.count(Document.id)).group_by(Document.kind).all()
-        ),
-        "ai_calls_30d": db.query(AIUsage).filter(
-            AIUsage.at >= datetime.utcnow() - timedelta(days=30)
-        ).count(),
-        "storage_mb_used": db.query(func.sum(User.used_mb)).scalar() or 0,
-    }
+class Room:
+    def __init__(self):
+        self.clients: dict[int, dict[str, WebSocket]] = {}
+        self.presence: dict[int, dict[str, dict]] = {}
+        self.docs: dict[int, dict] = {}
+        self.lock = asyncio.Lock()
+
+    async def join(self, doc_id: int, client_id: str, ws: WebSocket, who: dict):
+        async with self.lock:
+            self.clients.setdefault(doc_id, {})[client_id] = ws
+            self.presence.setdefault(doc_id, {})[client_id] = who
+        await self.broadcast(doc_id, {"type": "presence", "action": "join", "clientId": client_id, "who": who})
+
+    async def leave(self, doc_id: int, client_id: str):
+        async with self.lock:
+            doc_clients = self.clients.get(doc_id, {})
+            doc_presence = self.presence.get(doc_id, {})
+            doc_clients.pop(client_id, None)
+            doc_presence.pop(client_id, None)
+            if not doc_clients:
+                self.clients.pop(doc_id, None)
+            if not doc_presence:
+                self.presence.pop(doc_id, None)
+        await self.broadcast(doc_id, {"type": "presence", "action": "leave", "clientId": client_id})
+
+    async def broadcast(self, doc_id: int, msg: dict, skip: str | None = None):
+        dead: list[str] = []
+        for client_id, ws in list(self.clients.get(doc_id, {}).items()):
+            if client_id == skip:
+                continue
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.append(client_id)
+        for client_id in dead:
+            self.clients.get(doc_id, {}).pop(client_id, None)
+            self.presence.get(doc_id, {}).pop(client_id, None)
 
 
-@router.get("/users")
-def list_users(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_admin(user)
-    users = db.query(User).all()
-    return [{
-        "id": u.id, "email": u.email, "name": u.name, "role": u.role,
-        "quota_mb": u.quota_mb, "used_mb": u.used_mb,
-        "locale": u.locale, "is_active": u.is_active,
-        "last_login": u.last_login, "created_at": u.created_at,
-    } for u in users]
+_room = Room()
 
 
-class UserPatch(BaseModel):
-    role: str | None = None
-    quota_mb: int | None = None
-    is_active: bool | None = None
+@router.websocket("/ws/{doc_id}")
+async def collab_ws(ws: WebSocket, doc_id: int):
+    await ws.accept()
 
+    token = ws.query_params.get("token") or ""
+    try:
+        payload = decode_token(token)
+        email = payload.get("sub")
+    except Exception:
+        await ws.send_json({"type": "error", "message": "unauthorized"})
+        await ws.close()
+        return
 
-@router.patch("/users/{user_id}")
-def patch_user(user_id: int, body: UserPatch,
-               admin: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_admin(admin)
-    u = db.query(User).get(user_id)
-    if not u:
-        raise HTTPException(404, "User not found")
-    if body.role is not None:      u.role = body.role
-    if body.quota_mb is not None:  u.quota_mb = body.quota_mb
-    if body.is_active is not None: u.is_active = body.is_active
-    db.commit()
-    return {"ok": True}
+    db: Session = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+    finally:
+        db.close()
 
+    if not user:
+        await ws.send_json({"type": "error", "message": "user not found"})
+        await ws.close()
+        return
 
-@router.get("/audit")
-def audit(limit: int = 200, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_admin(user)
-    rows = db.query(AuditEvent).order_by(AuditEvent.at.desc()).limit(limit).all()
-    return [{
-        "id": r.id, "userId": r.user_id, "action": r.action,
-        "target": r.target, "meta": r.meta, "ip": r.ip, "at": r.at,
-    } for r in rows]
+    colors = [
+        "#2b579a",
+        "#217346",
+        "#d24726",
+        "#f2c94c",
+        "#6f42c1",
+        "#17a2b8",
+        "#e91e63",
+        "#009688",
+        "#ff9800",
+        "#795548",
+    ]
+    who = {"userId": user.id, "name": user.name or user.email, "color": random.choice(colors)}
+    client_id = str(uuid.uuid4())[:8]
 
+    await _room.join(doc_id, client_id, ws, who)
+    await ws.send_json({"type": "welcome", "clientId": client_id, "who": who, "peers": _room.presence.get(doc_id, {})})
 
-@router.delete("/purge-trash")
-def purge_trash(days: int = 30, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_admin(user)
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    n = db.query(Document).filter(Document.deleted_at != None, Document.deleted_at < cutoff).delete()
-    db.commit()
-    return {"purged": n}
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+            msg["from"] = client_id
+            doc_presence = _room.presence.setdefault(doc_id, {})
+            if msg.get("type") == "cursor":
+                doc_presence.setdefault(client_id, {})["cursor"] = msg.get("cursor")
+            elif msg.get("type") == "op":
+                pass
+            await _room.broadcast(doc_id, msg, skip=client_id)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await _room.leave(doc_id, client_id)

@@ -1,54 +1,110 @@
-"""Auth routes."""
-from fastapi import APIRouter, Depends, HTTPException, Body
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+"""Document CRUD routes (shared by Writer, Sheets, Slides)."""
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from ..auth import get_current_user
 from ..database import get_db
-from ..models import User
-from ..auth import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+from ..models import Document, User, Version
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-
-class RegisterIn(BaseModel):
-    email: EmailStr
-    password: str
-    name: str = ""
+router = APIRouter(prefix="/api/docs", tags=["docs"])
 
 
-class TokenOut(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+class DocIn(BaseModel):
+    kind: str  # word|sheets|slides
+    name: str = "Untitled"
+    data: dict | None = None
+
+    @property
+    def normalized_data(self) -> dict:
+        return self.data or {}
 
 
-@router.post("/register", response_model=TokenOut)
-def register(body: RegisterIn, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == body.email).first():
-        raise HTTPException(400, "Email already registered")
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
-    u = User(email=body.email, name=body.name, password_hash=hash_password(body.password))
-    db.add(u)
+class DocOut(BaseModel):
+    id: int
+    kind: str
+    name: str
+    data: dict
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+def _owned(doc_id: int, user: User, db: Session) -> Document:
+    doc = db.query(Document).filter(Document.id == doc_id, Document.owner_id == user.id).first()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    return doc
+
+
+@router.get("", response_model=list[DocOut])
+def list_docs(kind: str | None = Query(None), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(Document).filter(Document.owner_id == user.id)
+    if kind:
+        query = query.filter(Document.kind == kind)
+    return query.order_by(Document.updated_at.desc()).all()
+
+
+@router.post("", response_model=DocOut)
+def create_doc(body: DocIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    doc = Document(owner_id=user.id, kind=body.kind, name=body.name, data=body.normalized_data)
+    db.add(doc)
     db.commit()
-    db.refresh(u)
-    return TokenOut(access_token=create_access_token(u.email),
-                    refresh_token=create_refresh_token(u.email))
+    db.refresh(doc)
+    return doc
 
 
-@router.post("/login", response_model=TokenOut)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    u = db.query(User).filter(User.email == form.username).first()
-    if not u or not verify_password(form.password, u.password_hash):
-        raise HTTPException(401, "Invalid credentials")
-    return TokenOut(access_token=create_access_token(u.email),
-                    refresh_token=create_refresh_token(u.email))
+@router.get("/{doc_id}", response_model=DocOut)
+def get_doc(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _owned(doc_id, user, db)
 
 
-@router.post("/refresh", response_model=TokenOut)
-def refresh(refresh_token: str = Body(..., embed=True)):
-    payload = decode_token(refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(401, "Invalid refresh token")
-    return TokenOut(access_token=create_access_token(payload["sub"]),
-                    refresh_token=create_refresh_token(payload["sub"]))
+@router.put("/{doc_id}", response_model=DocOut)
+def update_doc(doc_id: int, body: DocIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    doc = _owned(doc_id, user, db)
+    doc.name = body.name
+    doc.data = body.normalized_data
+    doc.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.delete("/{doc_id}")
+def delete_doc(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    doc = _owned(doc_id, user, db)
+    db.delete(doc)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- Versions ----------
+
+
+@router.get("/{doc_id}/versions")
+def list_versions(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _owned(doc_id, user, db)
+    versions = db.query(Version).filter(Version.document_id == doc_id).order_by(Version.created_at.desc()).all()
+    return [{"id": v.id, "label": v.label, "created_at": v.created_at} for v in versions]
+
+
+@router.post("/{doc_id}/versions")
+def snapshot(doc_id: int, label: str = "", user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    doc = _owned(doc_id, user, db)
+    version = Version(document_id=doc.id, data=doc.data, label=label)
+    db.add(version)
+    db.commit()
+    return {"id": version.id}
+
+
+@router.post("/{doc_id}/restore/{version_id}")
+def restore(doc_id: int, version_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    doc = _owned(doc_id, user, db)
+    version = db.query(Version).filter(Version.id == version_id, Version.document_id == doc_id).first()
+    if not version:
+        raise HTTPException(404, "Version not found")
+    doc.data = version.data
+    db.commit()
+    return {"ok": True}
